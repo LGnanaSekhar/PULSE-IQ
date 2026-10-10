@@ -15,11 +15,15 @@ services:
         generateValue: true
       - key: BOOTSTRAP_ADMIN_PASSWORD
         sync: false
+      - key: BOOTSTRAP_COLLEGE_NAME
+        sync: false
+      - key: BOOTSTRAP_COLLEGE_DOMAIN
+        sync: false
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        sync: false
       - key: SEED_DEMO
-        value: "true"
-      - key: DEMO_STUDENTS
-        value: "1000"
+        value: "false"
+      - key: IMPORT_LEGACY_V2
+        value: "false"
       - key: COOKIE_SECURE
         value: "true"
-      - key: SOURCE_KIND
-        value: none

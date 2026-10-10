@@ -9,9 +9,11 @@ FROM python:3.12-slim-bookworm
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
 COPY requirements.txt requirements-connectors.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements-connectors.txt
 COPY backend/ ./backend/
 COPY connectors/ ./connectors/
+COPY scripts/add_college.py ./scripts/add_college.py
+COPY scripts/__init__.py ./scripts/__init__.py
 COPY --from=frontend /build/frontend/dist ./frontend/dist
 RUN useradd --create-home --uid 10001 pulseiq
 USER pulseiq

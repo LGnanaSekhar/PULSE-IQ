@@ -1,54 +1,30 @@
-# API
+# V3 API endpoints
 
-Base URL is your Render app address, followed by `/api`. The React client uses relative URLs. Production interactive API documentation is disabled by default; an administrator can set `ENABLE_API_DOCS=true` if needed. Protected endpoints still require staff authentication.
+All endpoints except `/health`, `/api/auth/login`, and `/api/colleges/resolve` require session cookies. POST/PUT/PATCH/DELETE also require `X-CSRF-Token` from `/api/auth/login` or `/api/auth/me`.
 
-## Authentication
+| Method | Endpoint | Role | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/colleges/resolve?email=...` | Public | Identify registered college domain |
+| POST | `/api/auth/login` | Public | Institutional email + password |
+| GET / POST | `/api/auth/me`, `/api/auth/logout` | Logged-in | User and session |
+| GET | `/api/students`, `/api/students/{id}` | All | Role-scoped roster and own/assigned student detail |
+| GET | `/api/analytics` | All | College/assigned/own scoring |
+| POST | `/api/students/{id}/scenario` | All | Non-destructive what-if |
+| GET | `/api/actions` | All | Scoping enforced |
+| POST / PATCH | `/api/actions`, `/api/actions/{id}` | Admin, faculty | Create/update interventions |
+| GET / POST | `/api/entries` | Admin, faculty | List/create draft or published class records |
+| GET | `/api/assignments` | Admin, faculty | College or own faculty assignments |
+| GET / POST | `/api/admin/accounts` | Admin | Manage faculty/student/admin access |
+| PATCH | `/api/admin/accounts/{id}/toggle` | Admin | Enable/disable an account |
+| POST | `/api/admin/students` | Admin | Create/update one roster entry |
+| POST | `/api/admin/students/bulk` | Admin | Atomic JSON bulk import, up to 5,000 students |
+| POST | `/api/admin/assignments` | Admin | Assign faculty subject/class |
+| GET / POST | `/api/admin/connections` | Admin | List/create encrypted integration |
+| GET | `/api/admin/connections/{id}/discover` | Admin | Inspect remote tables |
+| GET | `/api/admin/connections/{id}/preview` | Admin | Validate mapped sample before sync |
+| PUT | `/api/admin/connections/{id}/mapping` | Admin | Save field mapping |
+| POST | `/api/admin/connections/{id}/sync` | Admin | Import a verified institutional snapshot |
+| DELETE | `/api/admin/connections/{id}` | Admin | Remove source configuration |
+| GET | `/api/admin/audit` | Admin | Last 100 college audit events |
 
-POST `/auth/login` accepts `{"username":"...","password":"..."}` and sets the HttpOnly session cookie. Its JSON response contains the user and CSRF token. GET `/auth/me` restores the user/token for an existing session. Every subsequent POST/PATCH, including logout, needs the cookie and `X-CSRF-Token`. Browser same-origin checks also apply.
-
-This is session authentication, not a public API key. External scripts would need to log in, preserve cookies, handle expiry and send the CSRF token. There is no external API-key issuance feature in this release.
-
-## Routes
-
-| Method/path | Access and behavior |
-|---|---|
-| GET `/health` (outside `/api`) | Public database health check; no student records |
-| POST `/api/auth/login` | Login and issue session |
-| GET `/api/auth/me` | Session user/CSRF token |
-| POST `/api/auth/logout` | Revoke current session |
-| GET `/api/meta` | Available dates, authorized departments, semesters, dataset metadata, scoring config |
-| GET `/api/cohort` | Authorized scored student summary and support counts |
-| GET `/api/students/{student_id}` | Authorized evidence profile/component breakdown |
-| POST `/api/students/{student_id}/scenario` | Read-only what-if computation on fresh observed fields |
-| GET `/api/actions` | Authorized saved actions |
-| POST `/api/actions` | Create intervention/history event |
-| PATCH `/api/actions/{id}` | Version-checked update/history event |
-| GET `/api/actions/{id}/history` | Authorized revision history |
-| GET `/api/quality` | Admin-only snapshot validation and recent refresh logs |
-| POST `/api/admin/sync` | Admin-only fetch/validate/replace source snapshot |
-| GET `/api/admin/users` | Admin-only staff list; never password hashes |
-| POST `/api/admin/users` | Admin-only create staff account |
-
-Cohort filters: `period`, `analysis_date`, `stale_days` (0–365), `department`, `semester`, `segment`. Profiles take the date/freshness filters. Actions take department/semester filters; reporting-period selection does not delete or rewrite saved actions.
-
-Create action fields: `student_id`, `owner_alias`, `action`, `rationale`, `due_date`. Created status is Planned, version 1. Patch fields: `owner_alias`, `action`, `due_date`, `status`, `review_note`, `version`. Status is Planned, In progress, Reviewed or Closed. Reviewed/Closed need a nonblank review note. Student association cannot be patched.
-
-Create staff fields: `username` (3–80 allowed characters), `password` (12–200 characters), `role` (admin/faculty/placement), `departments` (required for restricted roles). Admin users have institution-wide access.
-
-Scenario fields: `period`, `analysis_date`, `stale_days`, `changes` object. Allowed changes are marks, classes attended, assignments completed, aptitude, coding and interview. Missing/stale fields cannot be invented. Percentages/counts remain within validated ranges. The response contains baseline and scenario; neither result is saved to the student tables.
-
-## Errors
-
-| Status | Meaning |
-|---|---|
-| 400 | Invalid requested action/period/source snapshot |
-| 401 | No valid staff session |
-| 403 | Missing permission, invalid CSRF or cross-origin mutation |
-| 404 | Unknown resource or outside authorized departments |
-| 409 | Action version conflict or duplicate username |
-| 422 | Request type/length/range validation error |
-| 429 | Login attempt limit |
-| 502 | Source fetch/network/driver failure |
-| 503 | Application database operation unavailable |
-
-Failed source validation returns `detail.message` and `detail.report`. Database/source failures do not return credential strings. Do not include raw environment settings in an API response when extending the backend.
+Public API docs can be enabled with `ENABLE_API_DOCS=true` (only on trusted testing deployments). Default production disables docs.

@@ -7,3 +7,5 @@ httpx==0.28.1
 pymongo==4.13.0
 pandas==2.3.3
 numpy==2.3.3
+cryptography>=44,<47
+PyMySQL==1.1.1
