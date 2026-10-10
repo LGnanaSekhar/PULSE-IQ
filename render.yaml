@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: pulseiq
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: main
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: APP_SECRET
+        generateValue: true
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        sync: false
+      - key: SEED_DEMO
+        value: "true"
+      - key: DEMO_STUDENTS
+        value: "1000"
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: SOURCE_KIND
+        value: none

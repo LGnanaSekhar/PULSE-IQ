@@ -1,45 +1,56 @@
-# PULSEIQ local verification report
+# Package verification — 10 October 2026
 
-Verified on 10 October 2026 with Python 3.12.14 on Linux x86_64. Dependencies: Streamlit 1.50.0, pandas 2.3.3, NumPy 2.3.3 and Plotly 6.3.1. Tests: pytest 8.4.2. Browser: Playwright 1.55.0 with Chromium 140.
+## Results
 
-## Automated checks
+| Check | Result |
+|---|---|
+| Python API, rules, source and persistence suite | **41 passed** |
+| React TypeScript check and Vite production build | **Passed** |
+| Browser integration scenarios | **7 passed**, no uncaught page errors |
+| Desktop and mobile board inspection | **Passed**, mobile width 390 px |
+| PostgreSQL DDL compilation | **Passed** through SQLAlchemy PostgreSQL dialect |
 
-`python -m pytest -q`: **34 passed in 3.76 seconds** on the final application source. Timings vary by machine.
+Environment: Python 3.12.14, Node 24.19.0. Backend/browser checks used isolated temporary SQLite databases with the real FastAPI routes and real React build. Production settings require PostgreSQL; users do not configure a local SQLite database.
 
-Verified the 68.0 reference score, independent placement support despite strong marks, insufficient and provisional coverage, known triggers with missing assessments, overlapping segments and feedback requests that do not alter scores. Tests also cover stale/future exclusion, baseline-preserving scenarios, invalid scenario values, unique-period joins, leading-zero IDs, duplicate rejection, unmatched-ID exclusion, percentage/count/date constraints, zero denominators, file limits and formula-safe exports.
+## What the automated suite checks
 
-Action tests cover creation, validation, review, reopening and preservation of previous notes. Streamlit integration tests cover all seven screens, empty filters, profile/action workflow, benchmark switching and independent session state. The UCI sample is verified to receive no overall scores or unsupported on-track labels.
+- Login, secure session-cookie settings, CSRF, cross-origin rejection, logout, expired/deactivated sessions and login attempt limits.
+- Administrator/faculty/placement account access, department filters and denial of profiles/actions/history outside authorized departments.
+- A 1,000-student database seed, idempotent startup and a known complete reference score of 68.0.
+- Missing fields, zero denominators, provisional/insufficient coverage, known triggers despite partial evidence, support requests without score penalties, stale and future reporting dates.
+- Exact reporting-period joins and configuration/threshold boundaries.
+- Invalid source fields/ranges, duplicate keys, unmatched IDs, malformed entity arrays and field mapping.
+- Read-only SQL mapping using a separate fixture database, stable string IDs with leading zeroes and bounded canonical API responses/authentication on a mock HTTPS transport.
+- Action creation, required review notes, reopening, append-only application revision events and version conflict rejection.
+- **Two simultaneous edits:** one succeeds, the other receives 409; only one additional revision is committed.
+- Parallel cohort/profile/action requests and persistence across application/engine reconstruction.
+- Failed validation preserves the prior snapshot/actions/history; an injected database failure rolls back snapshot replacement.
+- Removed students retain existing intervention history; a roster-only source still provides unknown profiles and usable actions.
 
-These establish software behavior and arithmetic, not real dropout/placement prediction accuracy or causal intervention effectiveness.
+## Browser scenarios
 
-## Actual Chromium checks
+1. Staff login and 1,000-student overview/charts.
+2. Student profile, 68.0 reference score and source provenance.
+3. Create an Action Board item and save a Reviewed status/note.
+4. Reopen, inspect three revisions, restart the backend and confirm the same action/history/session persists.
+5. Calculate a 78.0 scenario from the 68.0 baseline; confirm the baseline stays unchanged and the scenario remains visible.
+6. Create a faculty account and confirm 250 authorized Computer Science students, scoped actions and no administrator navigation.
+7. Use the Action Board at mobile width without horizontal page overflow.
 
-- Desktop overview, profiles, charts and action board rendered without application exceptions.
-- Invalid academic CSV blocked activation while the previous synthetic dataset stayed active.
-- All eight valid demo CSVs were uploaded and activated; DEMO001 still displayed 68.0.
-- A faculty action was created and action/history CSVs were downloaded with expected contents.
-- Cohort download contained 200 student records plus the header.
-- A separate browser context started with the original demo and no actions from the first context.
-- Mobile viewport 390 × 844 rendered without document horizontal overflow; desktop was 1440 × 1100. Screenshots were visually inspected.
-- The local server health endpoint returned HTTP 200.
+Screenshots are included under `docs/screenshots/`; their students and account names are fictional test records.
 
-The packaged `scripts/browser_smoke.py` harness also passed. Optional dependencies are in `requirements-browser.txt`. Its screenshots and downloads go into ignored `exports/browser_qa/`, excluded from the delivered archive.
+## Demo coverage
 
-## Data and timings
+The initial database seed contains 1,000 roster records and 2,000 rows in each of the seven reporting sources: **15,000 canonical records total**, across two reporting dates. In the latest fresh period, 964 scores are complete, 35 provisional and 1 insufficient. Fixtures explicitly include an academic gap, placement gap, dual gap, on-track case, missing placement evidence, zero denominator and a student support request.
 
-`python scripts/benchmark.py`, September period, analysis 10 October 2026, freshness 30 days:
+This validates program behavior, not model prediction accuracy. There is no trained model or claimed real-world accuracy figure.
 
-| Input | Students | Validation | Join + score | Total | Score state |
-| --- | --- | --- | --- | --- | --- |
-| Synthetic full demo | 200 | 0.0475 s | 0.0256 s | 0.0732 s | 186 complete, 13 provisional, 1 insufficient |
-| UCI academic-only sample | 400 | 0.0114 s | 0.0270 s | 0.0384 s | 400 insufficient; maximum coverage 30% |
+## Checks that require your accounts or institute access
 
-The synthetic cohort has 96 academic-support and 94 placement-support flags; these counts overlap. The UCI academic derivative retains 4,424 study rows. Its importer sample uses 400 students and 800 academic period rows; no missing source categories are fabricated.
+An actual Neon connection, Render image build/deployment and the institute's real SQL/MongoDB/ERP endpoint have **not** been tested here because their accounts, credentials and approved network access were not provided. Do not interpret driver support or PostgreSQL DDL compilation as a completed live-connection test.
 
-These are one-run local measurements, excluding browser rendering, dependency installation and cold hosted startup. They are not a hosting performance guarantee. Before delivery, the archive is checked for CRC integrity, required files and root structure, and tests are repeated on the extracted source.
+The GitHub Actions workflow is included to run the API suite against its own PostgreSQL 17 service, build React, run browser checks and build the Docker image. That remote workflow has not run until you push this code to GitHub. Follow `START_HERE.md` to deploy and verify your HTTPS service.
 
-## Remaining release gates
+MySQL/Oracle/SQL Server require optional drivers and, for SQL Server, a system ODBC driver. MongoDB nested-field handling is checked, but a live MongoDB server is not part of the initial verification.
 
-Windows startup instructions are supplied but were not executed on Windows. GitHub CI is configured for Python 3.11/3.12; local verification used Python 3.12 only. No GitHub push or public hosting was performed. After deployment, complete the fresh-HTTPS-browser checklist in `docs/DEPLOYMENT.md`.
-
-Authentication, department authorization, persistent storage, approved institutional connectors and independently evaluated prediction are future work.
+Nonfatal messages: an upstream test-client deprecation warning and Vite's JavaScript bundle-size advisory. No test failures remain in the verified package.

@@ -1,90 +1,59 @@
-# PULSEIQ architecture and implementation stages
+# Architecture and durable data
 
-PULSEIQ is a single Python application for institutional staff, following the attached Campus Compass PRD. A college data team supplies records, faculty inspect support evidence, and placement coordinators plan training. Student self-service is a later release.
-
-## Implemented system
+React is compiled by the Node build stage. FastAPI serves those static assets and the API from one Render web service. Same-origin HTTPS requests use a staff session cookie, so there is no frontend database credential or cross-origin API configuration to maintain.
 
 ```mermaid
 flowchart TD
-  R["Roster and seven CSV sources"] --> V["CSV validation · data_io.py"]
-  V --> Q["Validation report and provenance"]
-  V --> J["Exact-period roster join"]
-  J --> S["Coverage and support rules · scoring.py"]
-  S --> D["Cohort dashboard and profiles · views.py"]
-  S --> W["Scenario copy and recalculation"]
-  D --> I["Faculty action and revision history · interventions.py"]
-  D --> E["Evidence CSV export"]
-  I --> E
-  W --> X["Separate scenario export"]
-  A["app.py · session state and filters"] --> D
-  A --> I
+    Staff["Staff browser: React"] -->|"HTTPS and login session"| API["Render: FastAPI and React assets"]
+    API -->|"Read and write"| DB["Neon: application PostgreSQL"]
+    API -->|"Read-only adapter"| ERP["Institute SQL, MongoDB or API"]
+    ERP -->|"Validate approved records"| Snapshot["Canonical student snapshot"]
+    Snapshot -->|"Atomic replacement"| DB
 ```
 
-All execution is server-side Python except the browser-rendered Streamlit widgets and Plotly charts. There is no separate REST API, database, worker service or model server in this release. Dataset and intervention state lives in one browser session's `st.session_state`. No user data is globally cached. Charts and exports use the same filtered scored dataframe; the import-quality screen intentionally describes the entire active dataset or last attempted import.
+The institute source and the app database have different jobs. The source owns institute records. Neon stores an approved canonical snapshot plus PULSEIQ-owned staff/workflow state. A refreshed snapshot makes the dashboard consistent across staff browsers and keeps rules independent of vendor-specific database schemas.
 
-The bundled assets are immutable demonstration inputs. The separate UCI study is an academic-only benchmark, never a substitute for missing evidence categories.
+## Modules
 
-## Data path
+| Module | Boundary |
+|---|---|
+| `main` | Request validation, authorization, HTTP responses, action revision events |
+| `auth` | Password verification, session lookup, CSRF and department permissions |
+| `connectors` | Read-only source fetch using server credentials and configured fields |
+| `validation` | Canonical row types, ranges, duplicate keys, reporting dates and source joins |
+| `repository` | Transactions, durable snapshot metadata and role-scoped scored records |
+| `scoring` | Pure rules and scenario computation; no database mutation |
+| `seed` | Fictional records, inserted once through the same validation path |
+| `frontend` | Authenticated views, forms, charts, board stages and optimistic revision version |
 
-1. **Parse:** read UTF-8 CSV bytes with identifiers as text; enforce 5 MiB and 1,000 rows per file.
-2. **Validate:** check schema, blank IDs, duplicate keys, numeric bounds, integral counts, dates and numerator/denominator consistency. Report filename and CSV row number.
-3. **Activate transactionally:** any blocking error prevents batch activation. The old dataset remains active. Unmatched IDs are warnings and excluded until resolved; blank measurements and zero denominators remain missing.
-4. **Select period:** choose exactly one reporting date across sources. Records from other dates are not silently used.
-5. **Join:** roster left joins with `validate='one_to_one'` ensure exactly one joined row per roster student. Retain filenames, import timestamps, source dates and presence/freshness markers.
-6. **Determine freshness:** reporting period age relative to the visible analysis date. Age <0 or age beyond the configured window means evidence is excluded from current scoring.
-7. **Compute components and coverage:** require all placement and skills constituents; preserve missing components. Apply complete, provisional or insufficient score state.
-8. **Determine support:** evaluate fresh observed fields only. Preserve known triggers and mark incomplete negative findings Undetermined. Build overlapping segments and grounded support playbooks.
-9. **Review:** show source evidence and allow editable faculty actions. All revisions append a snapshot event, including reopening a reviewed/closed action.
-10. **Export:** emit filtered evidence, action, history or separate scenario CSVs. Prefix formula-like user-entered strings to prevent spreadsheet formula execution.
+## Tables
 
-## Module interfaces
+Canonical sources are `students`, `academic`, `attendance`, `lms`, `placement`, `skills`, `engagement`, `feedback`. The student table has a stable `student_id` primary key. All reporting tables have `(student_id, period_end)` primary keys and student foreign keys, plus source label/import timestamp.
 
-| Module | Input | Output |
-| --- | --- | --- |
-| `data_io.import_files(files)` | `{source: (filename, bytes)}` | `ImportResult(tables, report, summary)` and `.ok`, `.periods` |
-| `data_io.integrate(result, period, analysis_date, stale_days)` | Accepted import and selected date policy | One dataframe row per roster student with raw fields and provenance |
-| `scoring.score_dataset(frame)` | Integrated dataframe | Scored dataframe with A/T/L/P/S/E, coverage, score state, separate flags, reasons, segments and recommendations |
-| `scoring.component_breakdown(record)` | One scored dict | Component values, weights, original/effective points and provenance |
-| `scoring.simulate(record, changes)` | Baseline dict and permitted changes | Independent recalculated dict; baseline is never mutated |
-| `interventions.create_action(...)` | Session lists and validated action fields | New action list and appended history list |
-| `interventions.update_action(...)` | Session lists, ID and edited fields | Revised action list and appended snapshot history |
-| `views.*` | Filtered scored dataframe or activation callback | Streamlit UI; session actions updated only through workflow functions |
-| `app.py` | Browser widgets and session state | Active dataset, selected period, filters, navigation and module wiring |
+PULSEIQ workflow tables are `pulseiq_users`, `pulseiq_sessions`, `pulseiq_login_attempts`, `interventions`, `intervention_history`, `sync_log` and `pulseiq_state`.
 
-An import or benchmark activation is queued for the next Streamlit rerun so widget state resets occur before widgets are instantiated. Switching datasets clears actions/history to avoid linking old actions to unrelated student IDs. Changing a reporting period preserves existing actions because their student IDs still belong to the same roster.
+Each intervention has an immutable ID/student association, editable owner/action/due date/status/review note, timestamps and a numeric version. A revision update compares the submitted version with the stored version. A stale version returns HTTP 409. The new revision and its history event commit together. Reviewed/Closed require a review note. Reopening adds an event without deleting previous reviews.
 
-## Entity relationships
+History belongs to interventions through a foreign key. Snapshot refresh keeps removed student IDs as inactive roster identities so intervention history still has its parent student. Active student records feed the dashboard. Existing actions can be viewed/reviewed after a student leaves the current snapshot; new actions require an active student.
 
-```mermaid
-erDiagram
-  direction TB
-  STUDENTS ||--o{ ACADEMIC : has
-  STUDENTS ||--o{ ATTENDANCE : has
-  STUDENTS ||--o{ LMS : has
-  STUDENTS ||--o{ PLACEMENT : has
-  STUDENTS ||--o{ SKILLS : has
-  STUDENTS ||--o{ ENGAGEMENT : has
-  STUDENTS ||--o{ FEEDBACK : has
-  STUDENTS ||--o{ INTERVENTIONS : receives
-  INTERVENTIONS ||--|{ REVISION_HISTORY : records
-```
+## Refresh transaction
 
-Each evidence source has the unique key `(student_id, period_end)`. Interventions have an independent ID, owner, action, rationale, due date and review status. Session history preserves every revision rather than overwriting earlier notes.
+Fetch source records → validate all sources → acquire transaction advisory lock → update active roster → replace seven reporting tables → save dataset metadata and success log → commit. Any validation error blocks before replacement. Database failures roll back the replacement. Existing interventions, history, users and sessions are not deleted. PostgreSQL snapshot reads use repeatable-read isolation so a refresh cannot mix old and new entity reads within a dashboard calculation.
 
-## Delivery stages and dependencies
+The default mapping assumes one row per student/reporting period. It does not sum subject marks, select the newest arbitrary LMS event or aggregate attendance sessions. Provide approved normalized views for those cases. Periods are joined by exact date, never silently borrowed from another period.
 
-| Stage | Owner | Starts after | Completion gate |
-| --- | --- | --- | --- |
-| 1. Scaffold | Member 1 | Repository exists | App starts locally, dependency pins and common interfaces agreed |
-| 2. Data | Member 2 | Schemas agreed | Eight CSVs and validator pass valid/invalid fixtures |
-| 3. Decision engine | Member 3 | Schemas agreed; uses fixtures before full dataset | 68.0 reference, coverage, missingness and separate flags pass tests |
-| 4. Screens | Member 4 | Data/scoring contracts agreed | Filters, charts, profiles and source evidence render |
-| 5. Workflow | Member 5 | Student ID and recommendation contracts agreed | Create, edit, review, reopen and exports pass |
-| 6. Integrate | Member 1 plus all | Modules available | All local integration tests and browser workflow pass |
-| 7. Deploy/demo | Whole team | Source pushed to GitHub | Fresh HTTPS browser completes import/profile/action/download workflow |
+## Authentication and transport
 
-Stages 2–5 can proceed in parallel after schema agreement. Members 4 and 5 use fixtures until Members 2 and 3 provide finished outputs. This package already supplies all implemented modules; the next team task is to run it, review it and make scoped changes on feature branches.
+Passwords use Argon2 through `pwdlib`. Sessions use random opaque tokens; only HMAC token hashes are stored. Tokens are carried in HttpOnly, Secure, SameSite=Strict cookies for eight hours. The UI receives a CSRF token after login/session restoration and submits it in `X-CSRF-Token` on mutations. Cross-origin changes are rejected. API responses disable browser caching.
 
-## Future institutional architecture
+Roles: admin has institution-wide access and connector/user management. Faculty and placement staff have the same support workflow with department restrictions checked on the server for cohorts, profiles, scenarios, actions and history. A role change is not trusted from the browser. Login failure attempts are persisted and rate limited per username/client address.
 
-For production, add an authenticated identity provider, backend authorization by institution/department, encrypted database storage for records and audit events, approved import/connectors and retention/correction workflows. Add outcome prediction only after defining a dated target and historical evaluation plan. Those services and a student portal are not implemented here.
+This version provides initial staff creation and login/logout. It does not implement institute SSO, account self-service/password recovery, an immutable compliance ledger or separate student login. Each institute should use its own deployment/database and an appropriate staff account lifecycle.
+
+## Deployment and change management
+
+The Docker image runs one Uvicorn worker as an unprivileged container user. PostgreSQL connections have small bounded pools and reconnect checks. React has no production development server. No writable local data directory is needed.
+
+Startup creates missing initial tables and records schema version 1. It does **not** alter existing table columns or provide automatic upgrade migrations. For future schema changes, add a reviewed migration and test it on a separate database branch before deploying. A code rollback also needs a compatible database schema; it does not restore database contents.
+
+The service is stateless outside the shared database. Provider backups/restore policy are configured in Neon, not by browser exports. The current refresh model is a manually replaced snapshot, not incremental event streaming or automated synchronization.
